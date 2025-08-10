@@ -121,7 +121,7 @@ define( function( require )
 		}
 
 		var path  = this.walk.path;
-		
+
 		var total = PathFinding.search( from_x | 0, from_y | 0, to_x | 0, to_y | 0, range || 0, path);
 
 		this.walk.index =     1 * 2; // skip first index
@@ -132,12 +132,15 @@ define( function( require )
 			this.walk.tick =  this.walk.prevTick = Renderer.tick;
 			this.headDir   = 0;
 
-			this.setAction({
-				action: this.ACTION.WALK,
-				frame:  0,
-				repeat: true,
-				play:   true
-			});
+			// Avoid restarting the WALK animation if we're already walking
+			if (this.action !== this.ACTION.WALK) {
+				this.setAction({
+					action: this.ACTION.WALK,
+					frame:  0,
+					repeat: true,
+					play:   true
+				});
+			}
 		}
 	}
 
@@ -164,7 +167,7 @@ define( function( require )
 		if (this.action === this.ACTION.WALK || this.objecttype === this.constructor.TYPE_FALCON || this.objecttype === this.constructor.TYPE_WUG) {
 
 			if (index < total) {
-				
+
 				// Calculate new position, base on time and walk speed.
 				while (index < total) {
 					x = path[index+0] - (walk.pos[0]);
@@ -247,7 +250,7 @@ define( function( require )
 			pos[2] = cellHeight;
 			this.resetRoute();
 			this.isAttacking = false;
-		} 
+		}
 		else {
 			if (index < total) { // Walking got interrupted by getting attacked or other means
 				this.walk.tick += TICK - this.walk.prevTick; // Offset walking by the time elapsed.

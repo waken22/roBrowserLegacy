@@ -68,7 +68,7 @@ define(function( require )
 	var LaphineSys		 = require('UI/Components/LaphineSys/LaphineSys');
 	var LaphineUpg		 = require('UI/Components/LaphineUpg/LaphineUpg');
 	var Rodex            = require('UI/Components/Rodex/Rodex');
-	var RodexIcon        = require('UI/Components/Rodex/RodexIcon');	
+	var RodexIcon        = require('UI/Components/Rodex/RodexIcon');
 	var Refine           = require('UI/Components/Refine/Refine');
 	var PetInformations  = require('UI/Components/PetInformations/PetInformations');
 	var HomunInformations = require('UI/Components/HomunInformations/HomunInformations');
@@ -177,7 +177,7 @@ define(function( require )
 				if(is_sec_hbt) { Network.sendPacket(hbt); }
 
 				ping.clientTime = Date.now() - startTick;
-				
+
 				if(!SP.returned && SP.pingTime)	{ console.warn('[Network] The server did not answer the previous PING!'); }
 				SP.pingTime = ping.clientTime;
 				SP.returned = false;
@@ -368,11 +368,11 @@ define(function( require )
 	function onPong( pkt )
 	{
 		var SP = Session.ping;
-		
+
 		SP.returned = true;
 		SP.pongTime = 0;
 		SP.value = SP.pongTime - SP.pingTime;
-		
+
 		Session.serverTick = pkt.time + (SP.value/2); // Adjust with half ping
 	}
 
@@ -579,7 +579,7 @@ define(function( require )
 			if(Session.Entity.effectState & StatusConst.EffectState.FALCON) {
 				if(!Session.Entity.falcon)
 					Session.Entity.falcon = new Entity();
-				
+
 				Session.Entity.falcon.set({
 					objecttype: Session.Entity.falcon.constructor.TYPE_FALCON,
 					GID: Session.Entity.GID + '_FALCON',
@@ -929,6 +929,12 @@ define(function( require )
 	var _walkLastTick = 0;
 
 
+  /**
+   * @var {number[]} Last requested walk destination [x, y]
+   */
+  var _lastWalkDest = [-1, -1];
+
+
 	/**
 	 * Ask to move
 	 */
@@ -962,6 +968,8 @@ define(function( require )
 	function onRequestStopWalk()
 	{
 		Events.clearTimeout(_walkTimer);
+    _lastWalkDest[0] = -1;
+    _lastWalkDest[1] = -1;
 	}
 
 
@@ -980,20 +988,42 @@ define(function( require )
 		var isCurrentPos = (Math.round(Session.Entity.position[0]) === Mouse.world.x &&
 		                    Math.round(Session.Entity.position[1]) === Mouse.world.y);
 
-		if (isWalkable && !isCurrentPos) {
-			var pkt;
-			if(PACKETVER.value >= 20180307) {
-				pkt         = new PACKET.CZ.REQUEST_MOVE2();
-			} else {
-				pkt         = new PACKET.CZ.REQUEST_MOVE();
-			}
-			if (!checkFreeCell(Mouse.world.x, Mouse.world.y, 9, pkt.dest)) {
-				pkt.dest[0] = Mouse.world.x;
-				pkt.dest[1] = Mouse.world.y;
-			}
+    if (isWalkable && !isCurrentPos) {
+      var pkt;
+      if(PACKETVER.value >= 20180307) {
+        pkt = new PACKET.CZ.REQUEST_MOVE2();
+      } else {
+        pkt = new PACKET.CZ.REQUEST_MOVE();
+      }
 
-			Network.sendPacket(pkt);
-		}
+      // Determine desired destination (may be adjusted to a free neighboring cell)
+      if (!checkFreeCell(Mouse.world.x, Mouse.world.y, 9, pkt.dest)) {
+        pkt.dest[0] = Mouse.world.x;
+        pkt.dest[1] = Mouse.world.y;
+      }
+
+      var destX = pkt.dest[0];
+      var destY = pkt.dest[1];
+
+      // Skip sending if destination did not change since last request
+      var isSameAsLastRequested = (_lastWalkDest[0] === destX && _lastWalkDest[1] === destY);
+
+      // Also skip if current path already targets this destination
+      var walk = Session.Entity.walk;
+      var isSameAsCurrentPathEnd = false;
+      if (walk && walk.total > 0) {
+        var lastIdx = walk.total - 2;
+        if (lastIdx >= 0 && walk.path) {
+          isSameAsCurrentPathEnd = (walk.path[lastIdx] === destX && walk.path[lastIdx + 1] === destY);
+        }
+      }
+
+      if (!isSameAsLastRequested && !isSameAsCurrentPathEnd) {
+        Network.sendPacket(pkt);
+        _lastWalkDest[0] = destX;
+        _lastWalkDest[1] = destY;
+      }
+    }
 
 		Events.clearTimeout(_walkTimer);
 		_walkTimer    =  Events.setTimeout( walkIntervalProcess, 500);
@@ -1082,6 +1112,10 @@ define(function( require )
 				}
 			}, 50);
 		}
+
+    // Reset last requested destination once walking ends
+    _lastWalkDest[0] = -1;
+    _lastWalkDest[1] = -1;
 	}
 
 
@@ -1130,8 +1164,8 @@ define(function( require )
 	function onUseItem( index )
 	{
 		// Items are not usable when Laphine Synthesis, Upgrade, ItemReform UI is open (if they are available at all)
-		if ((LaphineSys.__loaded && LaphineSys.__active && LaphineSys.ui.is(':visible')) || 
-			(LaphineUpg.__loaded && LaphineUpg.__active && LaphineUpg.ui.is(':visible')) || 
+		if ((LaphineSys.__loaded && LaphineSys.__active && LaphineSys.ui.is(':visible')) ||
+			(LaphineUpg.__loaded && LaphineUpg.__active && LaphineUpg.ui.is(':visible')) ||
 			(ItemReform.__loaded && ItemReform.__active && ItemReform.ui.is(':visible'))) {
 			return false;
 		}
