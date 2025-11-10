@@ -90,7 +90,7 @@ function(      WebGL,         Texture,   Preferences,            Configs )
 		uniform mat4 uProjectionMat;
 
 		uniform vec3 uLightDirection;
-		uniform mat3 uNormalMat;
+		uniform vec3 uLightEnv;
 
 		void main(void) {
 			gl_Position     = uProjectionMat * uModelViewMat * vec4( aPosition, 1.0);
@@ -99,10 +99,8 @@ function(      WebGL,         Texture,   Preferences,            Configs )
 			vLightmapCoord  = aLightmapCoord;
 			vTileColorCoord = aTileColorCoord;
 
-			vec4 lDirection  = uModelViewMat * vec4( uLightDirection, 0.0);
-			vec3 dirVector   = normalize(lDirection.xyz);
-			float dotProduct = dot( uNormalMat * aVertexNormal, dirVector );
-			vLightWeighting  = max( dotProduct, 1.0 );
+			float dotProduct = dot(aVertexNormal, uLightDirection );
+			vLightWeighting = max(dotProduct, 0.0);
 		}
 	`;
 
@@ -123,6 +121,7 @@ function(      WebGL,         Texture,   Preferences,            Configs )
 		uniform sampler2D uLightmap;
 		uniform sampler2D uTileColor;
 		uniform bool uLightMapUse;
+		uniform bool uPosterize;
 
 		uniform bool  uFogUse;
 		uniform float uFogNear;
@@ -132,41 +131,46 @@ function(      WebGL,         Texture,   Preferences,            Configs )
 		uniform vec3  uLightAmbient;
 		uniform vec3  uLightDiffuse;
 		uniform float uLightOpacity;
+		uniform vec3  uLightDirection;
+		uniform vec3 uLightEnv;
+
+		vec3 posterize(vec3 c) {
+		    c *= 255.0;
+		    c = floor(c / 16.0) * 16.0;
+		    c /= 255.0;
+		    return c;
+		}
 
 		void main(void) {
-
-			vec4 texture = texture2D( uDiffuse,  vTextureCoord.st );
-			float lightWeight = 1.0;
-
-			if (texture.a == 0.0) {
+			vec4 texture = texture2D(uDiffuse, vTextureCoord.st);
+			if (texture.a < 0.1)
 				discard;
-			}
 
 			if (vTileColorCoord.st != vec2(0.0,0.0)) {
 				texture    *= texture2D( uTileColor, vTileColorCoord.st);
-				//lightWeight = vLightWeighting; // Note: This is not used in the original client
 			}
 
-			vec3 Ambient    = uLightAmbient * uLightOpacity;
-			vec3 Diffuse    = uLightDiffuse * lightWeight;
+			vec3 color = (vLightWeighting * uLightDiffuse + uLightAmbient);
+			texture.rgb *= clamp(color, 0.0, 1.0);
+			texture.rgb *= clamp(uLightEnv, 0.0, 1.0);
 
 			if (uLightMapUse) {
-				vec4 lightmap   = texture2D( uLightmap, vLightmapCoord.st);
-				vec4 LightColor = vec4( (Ambient + Diffuse) * lightmap.a, 1.0);
-				vec4 ColorMap   = vec4( lightmap.rgb, 0.0 );
+				vec4 lightmap = texture2D( uLightmap, vLightmapCoord.st);
+				if(uPosterize) {
+					lightmap.rgb = posterize(lightmap.rgb);
+				}
+				texture.rgb *= lightmap.a;
+				texture.rgb += clamp(lightmap.rgb, 0.0, 1.0);
+			}
 
-				gl_FragColor    = texture * clamp(LightColor, 0.0, 1.0) + ColorMap;
-			}
-			else {
-				vec4 LightColor = vec4( Ambient + Diffuse, 1.0);
-				gl_FragColor    = texture * clamp(LightColor, 0.0, 1.0);
-			}
+			gl_FragColor = texture;
 
 			if (uFogUse) {
 				float depth     = gl_FragCoord.z / gl_FragCoord.w;
 				float fogFactor = smoothstep( uFogNear, uFogFar, depth );
-				gl_FragColor    = mix( gl_FragColor, vec4( uFogColor, gl_FragColor.w ), fogFactor );
+				gl_FragColor    = mix( gl_FragColor, vec4(uFogColor, gl_FragColor.w), fogFactor );
 			}
+
 		}
 	`;
 
@@ -190,16 +194,17 @@ function(      WebGL,         Texture,   Preferences,            Configs )
 		// Bind matrix
 		gl.uniformMatrix4fv( uniform.uModelViewMat,  false, modelView );
 		gl.uniformMatrix4fv( uniform.uProjectionMat, false, projection );
-		gl.uniformMatrix3fv( uniform.uNormalMat,     false, normalMat );
 
 		// Bind light
 		gl.uniform3fv( uniform.uLightDirection, light.direction );
 		gl.uniform1f(  uniform.uLightOpacity,   light.opacity );
 		gl.uniform3fv( uniform.uLightAmbient,   light.ambient );
 		gl.uniform3fv( uniform.uLightDiffuse,   light.diffuse );
+		gl.uniform3fv( uniform.uLightEnv,   light.env );
 
 		// Render lightmap ?
 		gl.uniform1i(  uniform.uLightMapUse, Preferences.lightmap );
+		gl.uniform1i(  uniform.uPosterize, !Preferences.smoothlight );
 
 		// Fog settings
 		gl.uniform1i(  uniform.uFogUse,   fog.use && fog.exist );
